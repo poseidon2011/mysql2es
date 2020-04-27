@@ -31,8 +31,6 @@ public class Relation {
 
     // begin with 6.0, type will be remove, replace with _doc
     // https://www.elastic.co/guide/en/elasticsearch/reference/current/removal-of-types.html
-    /** es type */
-    private String type = "_doc";
 
     /** whether to generate scheme of es on the database table structure */
     private boolean scheme = false;
@@ -72,6 +70,10 @@ public class Relation {
 
     private String idPrefix;
     private String idSuffix;
+
+    private boolean delete = false;
+    private String deleteField;
+    private String deleteValue;
 
     void check() {
         U.assertNil(table, "must set (db table name)");

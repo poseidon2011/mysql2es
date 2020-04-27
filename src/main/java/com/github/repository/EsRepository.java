@@ -4,18 +4,21 @@ import com.github.util.A;
 import com.github.util.Jsons;
 import com.github.util.Logs;
 import com.github.util.U;
-import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
-import org.elasticsearch.action.admin.indices.delete.DeleteIndexResponse;
-import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
-import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.client.IndicesClient;
+import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.indices.CreateIndexRequest;
+import org.elasticsearch.client.indices.GetIndexRequest;
+import org.elasticsearch.client.indices.PutMappingRequest;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.query.MatchQueryBuilder;
+import org.elasticsearch.index.reindex.DeleteByQueryRequest;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.AsyncResult;
 import org.springframework.stereotype.Component;
@@ -35,43 +38,42 @@ public class EsRepository {
 
 
     @Async
-    public Future<Boolean> deleteScheme(String index, String type) {
-        IndicesClient indices = client.indices();
-
+    public Future<Boolean> deleteScheme(String index) {
         try {
-            if (indices.exists(new GetIndexRequest().indices(index))) {
+            IndicesClient indices = client.indices();
+            if (indices.exists(new GetIndexRequest(index), RequestOptions.DEFAULT)) {
                 long start = System.currentTimeMillis();
-                DeleteIndexResponse resp = indices.delete(new DeleteIndexRequest(index));
+                AcknowledgedResponse resp = indices.delete(new DeleteIndexRequest(index), RequestOptions.DEFAULT);
                 boolean flag = resp.isAcknowledged();
                 if (Logs.ROOT_LOG.isDebugEnabled()) {
-                    Logs.ROOT_LOG.debug("delete scheme ({}/{}) time({}) return({})",
-                            index, type, (System.currentTimeMillis() - start + "ms"), flag);
+                    Logs.ROOT_LOG.debug("delete scheme ({}) time({}) return({})",
+                            index, (System.currentTimeMillis() - start + "ms"), flag);
                 }
             }
         } catch (IOException e) {
             if (Logs.ROOT_LOG.isWarnEnabled()) {
-                Logs.ROOT_LOG.warn(String.format("delete scheme (%s/%s) es exception", index, type), e);
+                Logs.ROOT_LOG.warn(String.format("delete scheme (%s) es exception", index), e);
             }
         }
         return new AsyncResult<>(true);
     }
 
 
-    public void saveScheme(String index, String type, Map<String, Map> properties) {
+    public void saveScheme(String index, Map<String, Map> properties) {
         IndicesClient indices = client.indices();
 
         boolean exists = existsIndex(indices, index);
         if (!exists) {
             boolean create = createIndex(indices, index);
             if (create) {
-                createScheme(indices, index, type, properties);
+                createScheme(indices, index, properties);
             }
         }
     }
     private boolean existsIndex(IndicesClient indices, String index) {
         try {
             long start = System.currentTimeMillis();
-            boolean ack = indices.exists(new GetIndexRequest().indices(index));
+            boolean ack = indices.exists(new GetIndexRequest(index), RequestOptions.DEFAULT);
             if (Logs.ROOT_LOG.isDebugEnabled()) {
                 Logs.ROOT_LOG.debug("query index({}) exists time({}) return({})",
                         index, (System.currentTimeMillis() - start + "ms"), ack);
@@ -87,10 +89,9 @@ public class EsRepository {
     private boolean createIndex(IndicesClient indices, String index) {
         try {
             CreateIndexRequest request = new CreateIndexRequest(index);
-            // String settings = Searchs.getSettings();
-            // request.settings(settings, XContentType.JSON);
+            // request.settings(Searchs.getSettings(), XContentType.JSON);
             long start = System.currentTimeMillis();
-            boolean ack = indices.create(request).isAcknowledged();
+            boolean ack = indices.create(request, RequestOptions.DEFAULT).isAcknowledged();
             if (Logs.ROOT_LOG.isDebugEnabled()) {
                 Logs.ROOT_LOG.debug("create index({}) time({}) return({})",
                         index, (System.currentTimeMillis() - start + "ms"), ack);
@@ -103,15 +104,15 @@ public class EsRepository {
             return false;
         }
     }
-    private void createScheme(IndicesClient indices, String index, String type, Map<String, Map> properties) {
+    private void createScheme(IndicesClient indices, String index, Map<String, Map> properties) {
         try {
             String source = Jsons.toJson(A.maps("properties", properties));
-            PutMappingRequest request = new PutMappingRequest(index).type(type).source(source, XContentType.JSON);
+            PutMappingRequest request = new PutMappingRequest(index).source(source, XContentType.JSON);
             long start = System.currentTimeMillis();
-            boolean ack = indices.putMapping(request).isAcknowledged();
+            boolean ack = indices.putMapping(request, RequestOptions.DEFAULT).isAcknowledged();
             if (Logs.ROOT_LOG.isInfoEnabled()) {
-                Logs.ROOT_LOG.info("put ({}/{}) mapping time({}) return({})",
-                        index, type, (System.currentTimeMillis() - start + "ms"), ack);
+                Logs.ROOT_LOG.info("put ({}) mapping time({}) return({})",
+                        index, (System.currentTimeMillis() - start + "ms"), ack);
             }
         } catch (IOException e) {
             if (Logs.ROOT_LOG.isErrorEnabled()) {
@@ -121,7 +122,7 @@ public class EsRepository {
     }
 
 
-    public int saveDataToEs(String index, String type, Map<String, String> idDataMap) {
+    public int saveDataToEs(String index, Map<String, String> idDataMap) {
         if (A.isEmpty(idDataMap)) {
             return 0;
         }
@@ -131,13 +132,13 @@ public class EsRepository {
         for (Map.Entry<String, String> entry : idDataMap.entrySet()) {
             String id = entry.getKey(), source = entry.getValue();
             if (U.isNotBlank(id) && U.isNotBlank(source)) {
-                batchRequest.add(new IndexRequest(index, type, id).source(source, XContentType.JSON));
+                batchRequest.add(new IndexRequest(index).id(id).source(source, XContentType.JSON));
                 originalSize++;
             }
         }
 
         try {
-            BulkResponse responses = client.bulk(batchRequest);
+            BulkResponse responses = client.bulk(batchRequest, RequestOptions.DEFAULT);
             int size = responses.getItems().length;
             for (BulkItemResponse response : responses) {
                 if (response.isFailed()) {
@@ -145,7 +146,7 @@ public class EsRepository {
                 }
             }
             if (Logs.ROOT_LOG.isDebugEnabled()) {
-                Logs.ROOT_LOG.debug("batch save({}/{}) size({}) success({})", index, type, originalSize, size);
+                Logs.ROOT_LOG.debug("batch save({}) size({}) success({})", index, originalSize, size);
             }
             return size;
         } catch (IOException e) {
@@ -153,9 +154,21 @@ public class EsRepository {
             // org.elasticsearch.index.mapper.CompletionFieldMapper.parse(443)
             // https://github.com/elastic/elasticsearch/pull/30713/files
             if (Logs.ROOT_LOG.isErrorEnabled()) {
-                Logs.ROOT_LOG.error(String.format("create or update (%s/%s) es data exception", index, type), e);
+                Logs.ROOT_LOG.error(String.format("create or update (%s) es data exception", index), e);
             }
             return 0;
+        }
+    }
+
+    public void batchDelete(String index, String deleteField, String deleted) {
+        DeleteByQueryRequest request = new DeleteByQueryRequest(index);
+        request.setQuery(new MatchQueryBuilder(deleteField, deleted));
+        try {
+            client.deleteByQuery(request, RequestOptions.DEFAULT);
+        } catch (IOException e) {
+            if (Logs.ROOT_LOG.isErrorEnabled()) {
+                Logs.ROOT_LOG.error(String.format("batch delete (%s) exception", index), e);
+            }
         }
     }
 }

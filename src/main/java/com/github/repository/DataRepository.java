@@ -98,8 +98,7 @@ public class DataRepository {
     private void saveData(Relation relation) {
         String table = relation.getTable();
         String index = relation.useIndex();
-        String type = relation.getType();
-        if (U.isNotBlank(table) && U.isNotBlank(index) && U.isNotBlank(type)) {
+        if (U.isNotBlank(table) && U.isNotBlank(index)) {
             List<String> matchTables;
             if (relation.checkMatch()) {
                 long start = System.currentTimeMillis();
@@ -112,13 +111,13 @@ public class DataRepository {
                 matchTables = Collections.singletonList(table);
             }
             for (String matchTable : matchTables) {
-                saveSingleTable(relation, index, type, matchTable);
+                saveSingleTable(relation, index, matchTable);
             }
         }
     }
 
-    private void saveSingleTable(Relation relation, String index, String type, String matchTable) {
-        String lastValue = F.read(matchTable, index, type);
+    private void saveSingleTable(Relation relation, String index, String matchTable) {
+        String lastValue = F.read(matchTable, index);
         String countSql = relation.countSql(matchTable, lastValue);
         long start = System.currentTimeMillis();
         Integer count = A.first(jdbcTemplate.queryForList(countSql, Integer.class));
@@ -148,14 +147,13 @@ public class DataRepository {
         long sqlTime = (System.currentTimeMillis() - sqlStart);
 
         String index = relation.useIndex();
-        String type = relation.getType();
 
         long esStart = System.currentTimeMillis();
-        int size = esRepository.saveDataToEs(index, type, fixDocument(relation, dataList, matchInId));
+        int size = esRepository.saveDataToEs(index, fixDocument(relation, dataList, matchInId));
         long esTime = (System.currentTimeMillis() - esStart);
         if (Logs.ROOT_LOG.isInfoEnabled()) {
             Logs.ROOT_LOG.info("sql({}) time({}ms) return size({}), batch to({}) time({}ms) success({})",
-                    sql, sqlTime, dataList.size(), (index + "/" + type), esTime, size);
+                    sql, sqlTime, dataList.size(), index, esTime, size);
         }
         if (size == 0) {
             // if write to es false, can break loop
@@ -170,7 +168,7 @@ public class DataRepository {
 
         handleEquals(relation, matchTable, lastValue, matchInId);
         // write last record in temp file
-        F.write(matchTable, index, type, lastValue);
+        F.write(matchTable, index, lastValue);
 
         // if sql: limit 1000, query data size 900, can break loop
         if (dataList.size() < relation.getLimit()) {
@@ -203,14 +201,13 @@ public class DataRepository {
                     long sqlTime = (System.currentTimeMillis() - sqlStart);
 
                     String index = relation.useIndex();
-                    String type = relation.getType();
 
                     long esStart = System.currentTimeMillis();
-                    int size = esRepository.saveDataToEs(index, type, fixDocument(relation, equalsDataList, matchInId));
+                    int size = esRepository.saveDataToEs(index, fixDocument(relation, equalsDataList, matchInId));
                     long esTime = (System.currentTimeMillis() - esStart);
                     if (Logs.ROOT_LOG.isInfoEnabled()) {
                         Logs.ROOT_LOG.info("equals sql({}ms) time({}) return size({}), batch to({}) time({}ms) success({})",
-                                equalsSql, sqlTime, equalsDataList.size(), (index + "/" + type), esTime, size);
+                                equalsSql, sqlTime, equalsDataList.size(), index, esTime, size);
                     }
                     if (size == 0) {
                         // if success was 0, can break equals handle

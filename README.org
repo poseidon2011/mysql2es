@@ -7,7 +7,7 @@ English Readme | [[README-CN.org][中文说明]]
    does not support physical deletion (physical deletion needs to be processed according to binlog),
    it is recommended to use logical deletion. For example, add the deleted(1 deleted, default 0) field to the table.
 
-   Based on jdk 8 and spring boot 2, support Elasticsearch 6.3.2
+   Based on jdk 8 and spring boot 2, support Elasticsearch 7.6.2
 
 
 The relevant configuration instructions are as follows:
@@ -28,7 +28,6 @@ config:
 
       # Starting with Elasticsearch 6.0, type defaults to _doc, and the index in Elasticsearch directly corresponds to the database table name
       index: product             # Indicates the index of /index/type/id in Elasticsearch, not set will be generated from the database table name (t_some_one ==> some-one), 6.0 start index name must be lowercase
-      type: doc                  # The default is _doc
       scheme: true               # Whether to generate Elasticsearch's scheme based on the database table structure at startup, the default is false
       sql: select * from t_table # Custom sql statement (do not use ORDER BY and LIMIT, will be automatically added based on increment-column), no setting will automatically assemble from the database table
       limit: 2000                # The number of times to get from the database, the default is 1000
@@ -46,6 +45,10 @@ config:
       primary-key: id            # The primary key name, when the table data is a lot, use  LIMIT 10million,1000  efficiency will be very slow, this field will optimize the sql statement, the default is id
       # Original sql :  SELECT ... FROM t_table WHERE time > '2010-01-01 00:00:01' LIMIT 10million,1000
       # Optimized sql:  SELECT ... FROM t_table c inner join (SELECT id FROM t_table WHERE time > '2010-01-01 00:00:01' LIMIT 10million,1000) t on t.id = c.id
+
+      delete: true               # Whether to regularly delete data that has been marked as deleted, the default is false
+      delete-field: deleted      # Field name when deleting in bulk. For example: isDeleted
+      delete-value: 1            # The value when deleting in bulk. For example: 1
 #+END_SRC
 
 about cron

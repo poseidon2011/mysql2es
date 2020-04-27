@@ -37,9 +37,7 @@ public class Runner implements ApplicationRunner {
             for (Relation relation : config.getRelation()) {
                 Map<String, Map> properties = dataRepository.dbToEsScheme(relation);
                 if (relation.isScheme() && A.isNotEmpty(properties)) {
-                    String index = relation.useIndex();
-                    String type = relation.getType();
-                    esRepository.saveScheme(index, type, properties);
+                    esRepository.saveScheme(relation.useIndex(), properties);
                 }
             }
         } finally {
